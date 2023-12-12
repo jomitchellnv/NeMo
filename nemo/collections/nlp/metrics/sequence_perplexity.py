@@ -28,20 +28,23 @@ class SequencePerplexity(Metric):
     an optional argument ``mask`` (bool tensor of shape [batch_size x seq_length]) which masks out tokens
     not participating in perplexity computation.
 
-    See :doc:`PyTorch Lightning Metrics<pytorch-lightning:metrics>` for the metric usage instructions.
-
-    Args:
-        dist_sync_on_step:
-            Synchronize metric state across processes at each ``forward()`` before returning the value at the step.
-        process_group:
-            Specify the process group on which synchronization is called. default: ``None`` (which selects the entire
-                world)
-        dist_sync_fn:
-            Callback that performs the allgather operation on the metric state. When ``None``, DDP will be used
-                to perform the allgather.
+    See :doc:`PyTorch Lightning Metrics<pytorch-lightning:metrics>` for the metric usage instructions.         
     """
 
-    def __init__(self, dist_sync_on_step=False, process_group=None, dist_sync_fn=None):
+    def __init__(self, dist_sync_on_step=False, process_group=None, dist_sync_fn=None, randomize: bool = False):
+        """Constructor.
+
+        Args:
+            dist_sync_on_step:
+                Synchronize metric state across processes at each ``forward()`` before returning the value at the step.
+            process_group:
+                Specify the process group on which synchronization is called. default: ``None`` (which selects the entire
+                    world)
+            dist_sync_fn:
+                Callback that performs the allgather operation on the metric state. When ``None``, DDP will be used
+                    to perform the allgather.
+            randomize: A flag, if True will enable randomized amino acid masking.
+        """
         super().__init__(
             dist_sync_on_step=dist_sync_on_step, process_group=process_group, dist_sync_fn=dist_sync_fn,
         )
@@ -58,6 +61,13 @@ class SequencePerplexity(Metric):
         if mask.dtype is not log_probs.dtype:
             mask = mask.to(log_probs.dtype)
 
+        # Log_probs: [N, S, V]
+        # Labels is `lm_labels`
+        # Maks is the padding_mask.
+        # Target shape (y): [N, S]
+        # Seq masking, same shape as label.
+
+        # Non padded positions and remove random positions within the same mask.
         target_log_probs = log_probs.gather(2, labels.unsqueeze(2)).squeeze(2)
         avg_neg_ll = -(target_log_probs * mask).sum(dim=-1) / mask.sum(dim=-1)
         ppl = avg_neg_ll.exp()

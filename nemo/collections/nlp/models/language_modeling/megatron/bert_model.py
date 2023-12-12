@@ -126,6 +126,10 @@ class BertLMHead(MegatronModule):
 def post_language_model_processing(
     lm_output, pooled_output, lm_head, binary_head, lm_labels, logit_weights, fp16_lm_cross_entropy,
 ):
+    # Note: `s` stands for Sequence length.
+    # lm_output: [N, s, hidden_dim]
+    # logit_weights: Weight between vocabulary
+    
     # lm_logits: [s, b, vocab_size]
     lm_logits = lm_head(lm_output, logit_weights)
 
@@ -139,6 +143,7 @@ def post_language_model_processing(
     else:
         # match shape of labels to lm_logits
         # lm_labels: [b, s] -> [s, b]
+        # NOTE: BAD why is this also computing a loss?
         lm_labels = lm_labels.transpose(0, 1).contiguous()
         if fp16_lm_cross_entropy:
             assert lm_logits.dtype == torch.half

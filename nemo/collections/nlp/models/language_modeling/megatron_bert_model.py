@@ -240,6 +240,7 @@ class MegatronBertModel(MegatronBaseModel):
             )
 
             def loss_func(output_tensor):
+                # Note: Are these arguments being passed through lexical scoping??? BAD
                 loss_dict = self.loss_func(loss_mask, sentence_order, output_tensor)
                 if 'sop loss' in loss_dict:
                     lm_loss = loss_dict['lm loss']
@@ -256,6 +257,7 @@ class MegatronBertModel(MegatronBaseModel):
 
         return fwd_output_and_loss_func
 
+    # TODO(@jomitchell) So we compute the loss here 
     def forward(
         self,
         input_ids,

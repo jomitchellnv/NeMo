@@ -451,6 +451,39 @@ class CosineAnnealing(WarmupAnnealHoldPolicy):
         return new_lrs
 
 
+class WarmupAnnealDecayHold(_LRScheduler):
+    def __init__(self, optimizer, *, max_steps, warmup_steps, max_lr, anneal_percentage: float = 1.0, last_epoch: int = -1):
+        """
+        Initializes the WarmupAnnealDecayHold learning rate scheduler.
+
+        :param max_steps: Total number of training steps.
+        :param warmup_steps: Number of steps for the linear warm-up.
+        :param max_lr: Peak learning rate to be achieved after warm-up.
+        """
+        self.max_steps = max_steps
+        self.warmup_steps = warmup_steps
+        self.max_lr = max_lr
+        self.anneal_percentage = anneal_percentage 
+        self.last_epoch = last_epoch
+
+        for group in optimizer.param_groups:
+            group.setdefault('initial_lr', max_lr)
+        
+        super(WarmupAnnealDecayHold, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        step_num = self.last_epoch
+        if step_num < self.warmup_steps:
+            lr = self.max_lr * step_num / self.warmup_steps
+        else:
+            decay_steps = self.max_steps - self.warmup_steps
+            lr = self.max_lr * (1 - (step_num - self.warmup_steps) / decay_steps)
+            lr = max(lr, self.max_lr * self.anneal_percentage)
+        
+        return [lr for _ in self.optimizer.param_groups]
+        
+
+
 class NoamAnnealing(_LRScheduler):
     def __init__(
         self, optimizer, *, d_model, warmup_steps=None, warmup_ratio=None, max_steps=None, min_lr=0.0, last_epoch=-1
@@ -963,6 +996,7 @@ AVAILABLE_SCHEDULERS = {
     'NoamAnnealing': NoamAnnealing,
     'NoamHoldAnnealing': NoamHoldAnnealing,
     'WarmupAnnealing': WarmupAnnealing,
+    'WarmupAnnealDecayHold': WarmupAnnealDecayHold,
     'InverseSquareRootAnnealing': InverseSquareRootAnnealing,
     'T5InverseSquareRootAnnealing': T5InverseSquareRootAnnealing,
     'SquareRootAnnealing': SquareRootAnnealing,
