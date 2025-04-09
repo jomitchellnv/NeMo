@@ -35,6 +35,7 @@ from nemo.lightning.io.pl import ckpt_to_weights_subdir
 from nemo.lightning.pytorch.callbacks import PEFT
 from nemo.lightning.pytorch.strategies.megatron_strategy import MegatronStrategy
 from nemo.lightning.pytorch.strategies.utils import RestoreConfig
+from nemo.utils import logging
 
 
 class MCoreTokenizerWrappper:
@@ -130,6 +131,12 @@ def _setup_trainer_and_restore_model(
     """
     assert isinstance(trainer.strategy, MegatronStrategy), "Only MegatronStrategy is supported for trainer.strategy."
     assert trainer.strategy.context_parallel_size <= 1, "Context parallelism is not supported for inference."
+
+    # [ModelOpt]: If modelopt_state exists, overwrite transformer_layer_spec to modelopt spec
+    from nemo.collections.llm.modelopt import set_modelopt_spec_if_exists_in_ckpt
+
+    set_modelopt_spec_if_exists_in_ckpt(model, path)
+
     if (adapter_meta_path := ckpt_to_weights_subdir(path, is_saving=False) / ADAPTER_META_FILENAME).exists():
         with open(adapter_meta_path, "r") as f:
             metadata = json.load(f)
@@ -146,6 +153,7 @@ def _setup_trainer_and_restore_model(
         )
 
     if tokenizer is not None:
+        logging.info(f"Overriding model.tokenizer to: {tokenizer}")
         model.tokenizer = tokenizer
 
     trainer.strategy.restore_config = restore_config
@@ -181,6 +189,7 @@ def setup_model_and_tokenizer(
     trainer: nl.Trainer,
     params_dtype: torch.dtype = torch.bfloat16,
     inference_batch_times_seqlen_threshold: int = 1000,
+    inference_max_seq_length: int = 4096,
 ) -> tuple[MegatronModule, MCoreTokenizerWrappper]:
     """
     Sets up the model and tokenizer for inference.
@@ -195,6 +204,8 @@ def setup_model_and_tokenizer(
             Defaults to torch.bfloat16.
         inference_batch_times_seqlen_threshold (int, optional): If batch-size times sequence-length is smaller
            than this threshold then we will not use pipelining, otherwise we will.
+        inference_max_seq_length (int, optional): max_seq_length for inference. Required by MCoreEngine(>=0.12).
+        Necessary for CUDA graphs. Defaults to 4096.
 
     Returns:
         tuple[MegatronModule, MCoreTokenizerWrappper]:
@@ -203,7 +214,9 @@ def setup_model_and_tokenizer(
     model: io.TrainerContext = io.load_context(path=ckpt_to_context_subdir(path), subpath="model")
     _setup_trainer_and_restore_model(path=path, trainer=trainer, model=model)
 
-    inference_wrapped_model = model.get_inference_wrapper(params_dtype, inference_batch_times_seqlen_threshold)
+    inference_wrapped_model = model.get_inference_wrapper(
+        params_dtype, inference_batch_times_seqlen_threshold, inference_max_seq_length
+    )
     return inference_wrapped_model, MCoreTokenizerWrappper(model.tokenizer)
 
 
